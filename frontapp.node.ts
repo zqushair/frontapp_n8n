@@ -68,7 +68,7 @@ export class Frontapp implements INodeType {
 				required: true,
 				description: 'The resource to operate on.',
 			},
-			// --- Operations for Comments ---
+			// --------- Comments Operations ---------
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -159,7 +159,7 @@ export class Frontapp implements INodeType {
 				description: 'New content for the comment.',
 			},
 			{
-				displayName: 'Pin Comment',
+				displayName: 'Pin Comment (Update)',
 				name: 'updatePinned',
 				type: 'boolean',
 				displayOptions: {
@@ -185,7 +185,7 @@ export class Frontapp implements INodeType {
 				required: true,
 				description: 'Conversation ID to retrieve comments from.',
 			},
-			// --- Operations for Conversations ---
+			// --------- Conversations Operations ---------
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -251,7 +251,7 @@ export class Frontapp implements INodeType {
 				description: 'Subject for the discussion conversation.',
 			},
 			{
-				displayName: 'Comment Body',
+				displayName: 'Comment Body (Discussion)',
 				name: 'convBody',
 				type: 'string',
 				displayOptions: {
@@ -304,7 +304,7 @@ export class Frontapp implements INodeType {
 				default: '{}',
 				description: 'JSON object with link information (e.g., {"link_ids": ["top_123"]} or {"link_links": ["https://example.com"]}).',
 			},
-			// --- Operations for Contacts ---
+			// --------- Contacts Operations ---------
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -394,7 +394,7 @@ export class Frontapp implements INodeType {
 				default: '{}',
 				description: 'JSON object with note data, e.g., {"author_id": "user@example.com", "body": "Note text"}.',
 			},
-			// --- Operations for Contact Groups ---
+			// --------- Contact Groups Operations ---------
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -455,7 +455,7 @@ export class Frontapp implements INodeType {
 				required: true,
 				description: 'Comma-separated list of contact IDs.',
 			},
-			// --- Operations for Messages ---
+			// --------- Messages Operations ---------
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -599,7 +599,7 @@ export class Frontapp implements INodeType {
 				default: '{}',
 				description: 'JSON object with custom message data.',
 			},
-			// --- Operations for Drafts ---
+			// --------- Drafts Operations ---------
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -685,7 +685,7 @@ export class Frontapp implements INodeType {
 				default: '{}',
 				description: 'JSON object with data to update the draft.',
 			},
-			// --- Operations for Tags ---
+			// --------- Tags Operations ---------
 			{
 				displayName: 'Operation',
 				name: 'operation',
@@ -735,10 +735,25 @@ export class Frontapp implements INodeType {
 		],
 	};
 
+	/**
+	 * Helper function that wraps httpRequestWithAuthentication with retry logic.
+	 */
+	private async makeApiRequest(method: string, url: string, body?: IDataObject, qs?: IDataObject): Promise<any> {
+		const retryOptions = { retries: 3, factor: 2, minTimeout: 1000, maxTimeout: 4000 };
+		return await this.helpers.retry.call(this, retryOptions, async () => {
+			return this.helpers.httpRequestWithAuthentication.call(this, 'frontappApi', {
+				method,
+				url,
+				body,
+				qs,
+				json: true,
+			});
+		});
+	}
+
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const items = this.getInputData();
 		const returnData: IDataObject[] = [];
-		const retryOptions = { retries: 3, factor: 2, minTimeout: 1000, maxTimeout: 4000 };
 
 		for (let i = 0; i < items.length; i++) {
 			try {
@@ -750,509 +765,181 @@ export class Frontapp implements INodeType {
 				if (resource === 'comment') {
 					if (operation === 'create') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
-						const body = this.getNodeParameter('body', i) as string;
+						const bodyContent = this.getNodeParameter('body', i) as string;
 						const isPinned = this.getNodeParameter('is_pinned', i, false) as boolean;
-						const requestBody: FrontappCommentCreateRequest = { body, is_pinned: isPinned };
-						responseData = await this.helpers.retry.call(this, retryOptions, async () => {
-							return this.helpers.httpRequestWithAuthentication.call(
-								this,
-								'frontappApi',
-								{
-									method: 'POST',
-									url: `https://api.frontapp.com/conversations/${convId}/comments`,
-									body: requestBody,
-									json: true,
-								}
-							);
-						});
+						const requestBody: FrontappCommentCreateRequest = { body: bodyContent, is_pinned: isPinned };
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/conversations/${convId}/comments`, requestBody);
 					} else if (operation === 'get') {
 						const commentId = this.getNodeParameter('commentId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/comments/${commentId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/comments/${commentId}`);
 					} else if (operation === 'update') {
 						const commentId = this.getNodeParameter('commentId', i) as string;
 						const updateBody = this.getNodeParameter('updateBody', i) as string;
 						const updatePinned = this.getNodeParameter('updatePinned', i, false) as boolean;
 						const updateData = { body: updateBody, is_pinned: updatePinned };
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'PATCH',
-								url: `https://api.frontapp.com/comments/${commentId}`,
-								body: updateData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('PATCH', `https://api.frontapp.com/comments/${commentId}`, updateData);
 					} else if (operation === 'listComments') {
 						const convId = this.getNodeParameter('convIdForComments', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/conversations/${convId}/comments`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/conversations/${convId}/comments`);
 					} else if (operation === 'listMentions') {
 						const commentId = this.getNodeParameter('commentId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/comments/${commentId}/mentions`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/comments/${commentId}/mentions`);
 					}
 				}
 				// --------------- CONVERSATIONS ---------------
 				else if (resource === 'conversation') {
 					if (operation === 'get') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/conversations/${convId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/conversations/${convId}`);
 					} else if (operation === 'list') {
 						const filter = this.getNodeParameter('convFilter', i) as string;
 						let qs: IDataObject = {};
 						if (filter) {
 							qs = JSON.parse(filter);
 						}
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: 'https://api.frontapp.com/conversations',
-								qs,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', 'https://api.frontapp.com/conversations', undefined, qs);
 					} else if (operation === 'createDiscussion') {
 						const subject = this.getNodeParameter('convSubject', i) as string;
-						const body = this.getNodeParameter('convBody', i) as string;
-						const requestBody = { subject, body, type: 'discussion' };
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: 'https://api.frontapp.com/conversations',
-								body: requestBody,
-								json: true,
-							}
-						);
+						const convBody = this.getNodeParameter('convBody', i) as string;
+						const requestBody = { subject, body: convBody, type: 'discussion' };
+						responseData = await this.makeApiRequest('POST', 'https://api.frontapp.com/conversations', requestBody);
 					} else if (operation === 'update') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
 						const updateData = JSON.parse(this.getNodeParameter('convUpdateData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'PATCH',
-								url: `https://api.frontapp.com/conversations/${convId}`,
-								body: updateData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('PATCH', `https://api.frontapp.com/conversations/${convId}`, updateData);
 					} else if (operation === 'addFollowers') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
 						const followers = (this.getNodeParameter('followerIds', i) as string)
 							.split(',')
 							.map(id => id.trim());
 						const requestBody = { teammate_ids: followers };
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/conversations/${convId}/followers`,
-								body: requestBody,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/conversations/${convId}/followers`, requestBody);
 					} else if (operation === 'removeFollowers') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
 						const followers = (this.getNodeParameter('followerIds', i) as string)
 							.split(',')
 							.map(id => id.trim());
 						const requestBody = { teammate_ids: followers };
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'DELETE',
-								url: `https://api.frontapp.com/conversations/${convId}/followers`,
-								body: requestBody,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('DELETE', `https://api.frontapp.com/conversations/${convId}/followers`, requestBody);
 					} else if (operation === 'addLinks') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
 						const linkData = JSON.parse(this.getNodeParameter('linkData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/conversations/${convId}/links`,
-								body: linkData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/conversations/${convId}/links`, linkData);
 					} else if (operation === 'removeLinks') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
 						const linkData = JSON.parse(this.getNodeParameter('linkData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'DELETE',
-								url: `https://api.frontapp.com/conversations/${convId}/links`,
-								body: linkData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('DELETE', `https://api.frontapp.com/conversations/${convId}/links`, linkData);
 					} else if (operation === 'listMessages') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/conversations/${convId}/messages`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/conversations/${convId}/messages`);
 					} else if (operation === 'listEvents') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/conversations/${convId}/events`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/conversations/${convId}/events`);
 					}
 				}
 				// ---------------- CONTACTS ----------------
 				else if (resource === 'contact') {
 					if (operation === 'list') {
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: 'https://api.frontapp.com/contacts',
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', 'https://api.frontapp.com/contacts');
 					} else if (operation === 'get') {
 						const contactId = this.getNodeParameter('contactId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/contacts/${contactId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/contacts/${contactId}`);
 					} else if (operation === 'create') {
 						const contactData = JSON.parse(this.getNodeParameter('contactData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: 'https://api.frontapp.com/contacts',
-								body: contactData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', 'https://api.frontapp.com/contacts', contactData);
 					} else if (operation === 'update') {
 						const contactId = this.getNodeParameter('contactId', i) as string;
 						const contactData = JSON.parse(this.getNodeParameter('contactData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'PATCH',
-								url: `https://api.frontapp.com/contacts/${contactId}`,
-								body: contactData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('PATCH', `https://api.frontapp.com/contacts/${contactId}`, contactData);
 					} else if (operation === 'delete') {
 						const contactId = this.getNodeParameter('contactId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'DELETE',
-								url: `https://api.frontapp.com/contacts/${contactId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('DELETE', `https://api.frontapp.com/contacts/${contactId}`);
 					} else if (operation === 'merge') {
 						const mergeData = JSON.parse(this.getNodeParameter('mergeData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: 'https://api.frontapp.com/contacts/merge',
-								body: mergeData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', 'https://api.frontapp.com/contacts/merge', mergeData);
 					} else if (operation === 'addHandle') {
 						const contactId = this.getNodeParameter('contactId', i) as string;
 						const handleData = JSON.parse(this.getNodeParameter('handleData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/contacts/${contactId}/handles`,
-								body: handleData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/contacts/${contactId}/handles`, handleData);
 					} else if (operation === 'deleteHandle') {
 						const contactId = this.getNodeParameter('contactId', i) as string;
 						const handleData = JSON.parse(this.getNodeParameter('handleData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'DELETE',
-								url: `https://api.frontapp.com/contacts/${contactId}/handles`,
-								body: handleData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('DELETE', `https://api.frontapp.com/contacts/${contactId}/handles`, handleData);
 					} else if (operation === 'getNotes') {
 						const contactId = this.getNodeParameter('contactId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/contacts/${contactId}/notes`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/contacts/${contactId}/notes`);
 					} else if (operation === 'addNote') {
 						const contactId = this.getNodeParameter('contactId', i) as string;
 						const noteData = JSON.parse(this.getNodeParameter('noteData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/contacts/${contactId}/notes`,
-								body: noteData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/contacts/${contactId}/notes`, noteData);
 					}
 				}
 				// ------------- CONTACT GROUPS -------------
 				else if (resource === 'contactGroup') {
 					if (operation === 'list') {
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: 'https://api.frontapp.com/contact_groups',
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', 'https://api.frontapp.com/contact_groups');
 					} else if (operation === 'create') {
 						const groupData = JSON.parse(this.getNodeParameter('groupData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: 'https://api.frontapp.com/contact_groups',
-								body: groupData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', 'https://api.frontapp.com/contact_groups', groupData);
 					} else if (operation === 'delete') {
 						const groupId = this.getNodeParameter('groupId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'DELETE',
-								url: `https://api.frontapp.com/contact_groups/${groupId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('DELETE', `https://api.frontapp.com/contact_groups/${groupId}`);
 					} else if (operation === 'listContacts') {
 						const groupId = this.getNodeParameter('groupId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/contact_groups/${groupId}/contacts`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/contact_groups/${groupId}/contacts`);
 					} else if (operation === 'addContacts') {
 						const groupId = this.getNodeParameter('groupId', i) as string;
 						const contactIds = (this.getNodeParameter('groupContactIds', i) as string)
 							.split(',')
 							.map(id => id.trim());
 						const requestBody = { contact_ids: contactIds };
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/contact_groups/${groupId}/contacts`,
-								body: requestBody,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/contact_groups/${groupId}/contacts`, requestBody);
 					} else if (operation === 'removeContacts') {
 						const groupId = this.getNodeParameter('groupId', i) as string;
 						const contactIds = (this.getNodeParameter('groupContactIds', i) as string)
 							.split(',')
 							.map(id => id.trim());
 						const requestBody = { contact_ids: contactIds };
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'DELETE',
-								url: `https://api.frontapp.com/contact_groups/${groupId}/contacts`,
-								body: requestBody,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('DELETE', `https://api.frontapp.com/contact_groups/${groupId}/contacts`, requestBody);
 					}
 				}
 				// ----------------- MESSAGES -----------------
 				else if (resource === 'message') {
 					if (operation === 'get') {
 						const messageId = this.getNodeParameter('messageId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/messages/${messageId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/messages/${messageId}`);
 					} else if (operation === 'getSource') {
 						const messageId = this.getNodeParameter('messageId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/messages/${messageId}/source`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/messages/${messageId}/source`);
 					} else if (operation === 'send') {
 						const channelId = this.getNodeParameter('channelId', i) as string;
 						const to = this.getNodeParameter('messageTo', i) as string;
 						const subject = this.getNodeParameter('messageSubject', i) as string;
-						const body = this.getNodeParameter('messageBody', i) as string;
+						const msgBody = this.getNodeParameter('messageBody', i) as string;
 						const requestBody = {
 							author_id: '',
 							subject,
-							body,
+							body: msgBody,
 							to: to.split(',').map(item => item.trim()),
 						};
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/channels/${channelId}/messages`,
-								body: requestBody,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/channels/${channelId}/messages`, requestBody);
 					} else if (operation === 'sendReply') {
 						const convId = this.getNodeParameter('conversationId', i) as string;
 						const replyChannelId = this.getNodeParameter('replyChannelId', i) as string;
-						const body = this.getNodeParameter('messageBody', i) as string;
-						const requestBody = { author_id: '', body, channel_id: replyChannelId };
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/conversations/${convId}/messages`,
-								body: requestBody,
-								json: true,
-							}
-						);
+						const msgBody = this.getNodeParameter('messageBody', i) as string;
+						const requestBody = { author_id: '', body: msgBody, channel_id: replyChannelId };
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/conversations/${convId}/messages`, requestBody);
 					} else if (operation === 'import') {
 						const inboxId = this.getNodeParameter('inboxId', i) as string;
 						const importData = JSON.parse(this.getNodeParameter('importMessageData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/inboxes/${inboxId}/messages`,
-								body: importData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/inboxes/${inboxId}/messages`, importData);
 					} else if (operation === 'receiveCustom') {
 						const channelId = this.getNodeParameter('channelId', i) as string;
 						const customData = JSON.parse(this.getNodeParameter('customMessageData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/channels/${channelId}/incoming_messages`,
-								body: customData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/channels/${channelId}/incoming_messages`, customData);
 					} else if (operation === 'markSeen') {
 						const messageId = this.getNodeParameter('messageId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/messages/${messageId}/mark_seen`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/messages/${messageId}/mark_seen`);
 					}
 				}
 				// ----------------- DRAFTS -----------------
@@ -1260,136 +947,43 @@ export class Frontapp implements INodeType {
 					if (operation === 'create') {
 						const convId = this.getNodeParameter('draftConversationId', i) as string;
 						const draftData = JSON.parse(this.getNodeParameter('draftData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/conversations/${convId}/drafts`,
-								body: draftData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/conversations/${convId}/drafts`, draftData);
 					} else if (operation === 'list') {
 						const convId = this.getNodeParameter('draftConversationId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/conversations/${convId}/drafts`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/conversations/${convId}/drafts`);
 					} else if (operation === 'createReply') {
 						const convId = this.getNodeParameter('draftConversationId', i) as string;
 						const replyData = JSON.parse(this.getNodeParameter('draftReplyData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: `https://api.frontapp.com/conversations/${convId}/drafts`,
-								body: replyData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', `https://api.frontapp.com/conversations/${convId}/drafts`, replyData);
 					} else if (operation === 'delete') {
 						const draftId = this.getNodeParameter('draftId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'DELETE',
-								url: `https://api.frontapp.com/drafts/${draftId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('DELETE', `https://api.frontapp.com/drafts/${draftId}`);
 					} else if (operation === 'edit') {
 						const draftId = this.getNodeParameter('draftId', i) as string;
 						const editData = JSON.parse(this.getNodeParameter('draftEditData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'PATCH',
-								url: `https://api.frontapp.com/drafts/${draftId}`,
-								body: editData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('PATCH', `https://api.frontapp.com/drafts/${draftId}`, editData);
 					}
 				}
 				// ------------------ TAGS ------------------
 				else if (resource === 'tag') {
 					if (operation === 'list') {
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: 'https://api.frontapp.com/tags',
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', 'https://api.frontapp.com/tags');
 					} else if (operation === 'get') {
 						const tagId = this.getNodeParameter('tagId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/tags/${tagId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/tags/${tagId}`);
 					} else if (operation === 'create') {
 						const tagData = JSON.parse(this.getNodeParameter('tagData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'POST',
-								url: 'https://api.frontapp.com/tags',
-								body: tagData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('POST', 'https://api.frontapp.com/tags', tagData);
 					} else if (operation === 'update') {
 						const tagId = this.getNodeParameter('tagId', i) as string;
 						const tagData = JSON.parse(this.getNodeParameter('tagData', i) as string);
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'PATCH',
-								url: `https://api.frontapp.com/tags/${tagId}`,
-								body: tagData,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('PATCH', `https://api.frontapp.com/tags/${tagId}`, tagData);
 					} else if (operation === 'delete') {
 						const tagId = this.getNodeParameter('tagId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'DELETE',
-								url: `https://api.frontapp.com/tags/${tagId}`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('DELETE', `https://api.frontapp.com/tags/${tagId}`);
 					} else if (operation === 'listConversations') {
 						const tagId = this.getNodeParameter('tagId', i) as string;
-						responseData = await this.helpers.httpRequestWithAuthentication.call(
-							this,
-							'frontappApi',
-							{
-								method: 'GET',
-								url: `https://api.frontapp.com/tags/${tagId}/conversations`,
-								json: true,
-							}
-						);
+						responseData = await this.makeApiRequest('GET', `https://api.frontapp.com/tags/${tagId}/conversations`);
 					}
 				} else {
 					responseData = { error: `Resource "${resource}" not implemented` };
